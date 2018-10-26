@@ -35,6 +35,6 @@ jobs:
             docker push ${BASE_ECR_US_EAST_1_URI}/circleci-test:latest
 workflows:
   version: 2
-    commit:
-      jobs:
-        - ecr_push
+  build_and_push:
+    jobs:
+      - ecr_push
