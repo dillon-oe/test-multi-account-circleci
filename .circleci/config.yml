@@ -1,13 +1,40 @@
 version: 2
 jobs:
-  build:
+  ecr_push:
     docker:
-      - image: debian:stretch
+      - image: circleci/openjdk:8-jdk
     steps:
       - checkout
+      # https://circleci.com/docs/2.0/building-docker-images/#overview
+      - setup_remote_docker
       - run:
-          name: Greeting
-          command: echo Hello, world.
+          name: "Export Environment vars"
+          command: |
+            if [ "$CIRCLE_BRANCH" == "master" ]; then
+                AWS_ACCESS_KEY_ID=${PROD_AWS_ACCESS_KEY_ID}
+                AWS_SECRET_ACCESS_KEY=${PROD_AWS_SECRET_ACCESS_KEY}
+            else
+                AWS_ACCESS_KEY_ID=${DEV_AWS_ACCESS_KEY_ID}
+                AWS_SECRET_ACCESS_KEY=${DEV_AWS_SECRET_ACCESS_KEY}
+            fi
+            echo 'export CIRCLE_SHA1_SHORT=$(echo $CIRCLE_SHA1 | cut -c -7)' >> $BASH_ENV
+            echo 'export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}' >> $BASH_ENV
+            echo 'export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}' >> $BASH_ENV
+            echo 'export DEV_ECR_US_EAST_1_URI=$(echo $DEV_AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com)' >> $BASH_ENV
+            echo 'export PROD_ECR_US_EAST_1_URI=$(echo $PROD_AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com)' >> $BASH_ENV
+            source $BASH_ENV
       - run:
-          name: Print the Current Time
-          command: date
+          name: "Log in to AWS ECR"
+          command: eval $(aws ecr get-login --no-include-email --region us-east-1)
+      - run:
+          name: "Build & Push Hello World Web Docker Image"
+          command: |
+            docker build -t ${BASE_ECR_US_EAST_1_URI}/circleci-test:${CIRCLE_SHA1_SHORT} https://github.com/docker-library/hello-world.git#master:amd64/hello-world
+            docker tag ${BASE_ECR_US_EAST_1_URI}/circleci-test:${CIRCLE_SHA1_SHORT} ${BASE_ECR_US_EAST_1_URI}/circleci-test:latest
+            docker push ${BASE_ECR_US_EAST_1_URI}/circleci-test:${CIRCLE_SHA1_SHORT}
+            docker push ${BASE_ECR_US_EAST_1_URI}/circleci-test:latest
+workflows:
+  version: 2
+    commit:
+      jobs:
+        - ecr_push
